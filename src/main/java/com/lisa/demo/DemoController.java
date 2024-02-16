@@ -359,9 +359,9 @@ public class DemoController {
 	@SuppressWarnings("resource")
 	@PostMapping("/ib")
 	@PreAuthorize("hasAuthority('admin:create')")
-	public String payIB(@RequestParam("file") MultipartFile file) {
+	public ResponseEntity<HashMap<Integer, String>> payIB(@RequestParam("file") MultipartFile file) {
 		if (file.isEmpty()) {
-			return "Bạn chưa đính kèm file dữ liệu";
+			//return "Bạn chưa đính kèm file dữ liệu";
 		}
 
 		HashMap<Integer, String> data = new HashMap<>();
@@ -376,9 +376,9 @@ public class DemoController {
 
 			Row headerRow = sheet.getRow(0);
 			if (headerRow == null) {
-				return "File không đúng định dạng (dữ liệu trống)";
+				//return "File không đúng định dạng (dữ liệu trống)";
 			} else if (headerRow.getPhysicalNumberOfCells() != 16) {
-				return "File không đúng định dạng (16 cột)";
+				//return "File không đúng định dạng (16 cột)";
 			}
 
 			String idHeader = getCellValueAsString(headerRow.getCell(0));
@@ -386,15 +386,15 @@ public class DemoController {
 			String exnessIdHeader = getCellValueAsString(headerRow.getCell(14));
 
 			if (!"id".equals(idHeader)) {
-				return "File không đúng định dạng (cột thứ 1 không phải là id)";
+				//return "File không đúng định dạng (cột thứ 1 không phải là id)";
 			}
 
 			if (!"reward".equals(rewardHeader)) {
-				return "File không đúng định dạng (cột thứ 10 không phải là reward)";
+				//return "File không đúng định dạng (cột thứ 10 không phải là reward)";
 			}
 
 			if (!"client_account".equals(exnessIdHeader)) {
-				return "File không đúng định dạng (cột thứ 15 không phải là client_account - Exness ID)";
+				//return "File không đúng định dạng (cột thứ 15 không phải là client_account - Exness ID)";
 			}
 
 			// Lặp qua từng dòng (bắt đầu từ dòng thứ 2, do dòng đầu tiên là tiêu đề)
@@ -431,10 +431,10 @@ public class DemoController {
 
 		} catch (IOException e) {
 			e.printStackTrace();
-			return "Lỗi khi đọc file!";
+			//return "Lỗi khi đọc file!";
 		} catch (PartAlreadyExistsException pae) {
 			System.out.println(pae);
-			return "File ở chế độ Protected!";
+			//return "File ở chế độ Protected!";
 		}
 
 		double[] totalAmount = { 0.0, 0.0, 0.0 };
@@ -445,168 +445,170 @@ public class DemoController {
 		List<String> listExness = new ArrayList<>();
 
 		StringBuilder sb = new StringBuilder();
-		data.forEach((key, value) -> {
-			int firstDashIndex = value.indexOf('-');
-			int secondDashIndex = value.indexOf('-', firstDashIndex + 1);
-			String exnessTransaction = value.substring(0, firstDashIndex);
-			String exnessId = value.substring(secondDashIndex + 1, value.length());
-			double amount = Double.parseDouble(value.substring(firstDashIndex + 1, secondDashIndex));
-			double originalAmountPayToNetwork = amount * 0.8;
-			double remainingAmountPayToNetwork = originalAmountPayToNetwork;
-			double amountToAdmin = amount - originalAmountPayToNetwork;
-
-			// Kiem tra khoan hoa hong do da tra hay chua
-			Optional<ExnessTransaction> exTran = exTranRepo.findByTransactionExness(exnessTransaction);
-			if (exTran.isPresent()) {
-				sb.append(exnessTransaction + " đã được chi trả.\n");
-			} else {
-				totalAmount[0] += amount;
-				totalAmount[1] += amountToAdmin;
-				// Chi cho system 20% IB
-				History historyToAdmin = new History();
-				User userAdmin = userRepo.findByEmail("admin@gmail.com").get();
-				historyToAdmin.setAmount(amountToAdmin);
-				historyToAdmin.setReceiver("admin@gmail.com");
-				historyToAdmin.setSender(exnessId);
-				historyToAdmin.setTransaction(exnessTransaction);
-				historyToAdmin.setTime(String.valueOf(System.currentTimeMillis() / 1000));
-				historyToAdmin.setMessage("20% từ số IB=" + amount + " của ExnessID=" + exnessId);
-				historyToAdmin.setUser(userAdmin);
-				toAdmin.add(historyToAdmin);
-//				hisService.saveHistory(historyToAdmin);
+//		data.forEach((key, value) -> {
+//			int firstDashIndex = value.indexOf('-');
+//			int secondDashIndex = value.indexOf('-', firstDashIndex + 1);
+//			String exnessTransaction = value.substring(0, firstDashIndex);
+//			String exnessId = value.substring(secondDashIndex + 1, value.length());
+//			double amount = Double.parseDouble(value.substring(firstDashIndex + 1, secondDashIndex));
+//			double originalAmountPayToNetwork = amount * 0.8;
+//			double remainingAmountPayToNetwork = originalAmountPayToNetwork;
+//			double amountToAdmin = amount - originalAmountPayToNetwork;
 //
-//				userAdmin.setBalance(userAdmin.getBalance() + amountToAdmin);
-//				userRepo.save(userAdmin);
-
-				HashMap<Integer, String> listToPayIB = getNetWorkToLisa(exnessId);
-				System.out.println(listToPayIB.size());
-				for (HashMap.Entry<Integer, String> entry : listToPayIB.entrySet()) {
-					String recipientEmail = entry.getValue();
-					double amountToPay = 0.0;
-
-					if (recipientEmail.equals("lisa@gmail.com")) {
-						// Nếu người nhận là lisa@gmail, gửi toàn bộ số remainingAmountPayToNetwork (số
-						// IB chia còn lại khi gặp lisa@gmail.com) cho họ
-						amountToPay = remainingAmountPayToNetwork;
-						History historyToLisa = new History();
-						User userLisa = userRepo.findByEmail("lisa@gmail.com").get();
-						historyToLisa.setAmount(amountToPay);
-						historyToLisa.setReceiver(userLisa.getEmail());
-						historyToLisa.setSender(exnessId);
-						historyToLisa.setTransaction(exnessTransaction);
-						historyToLisa.setTime(String.valueOf(System.currentTimeMillis() / 1000));
-						historyToLisa.setMessage("Tìm thấy Lisa, chi hết số IB=" + amount + " còn lại của ExnessID=" + exnessId);
-						historyToLisa.setUser(userLisa);
-
-						toLisa.add(historyToLisa);
-//						hisService.saveHistory(historyToLisa);
+//			// Kiem tra khoan hoa hong do da tra hay chua
+//			Optional<ExnessTransaction> exTran = exTranRepo.findByTransactionExness(exnessTransaction);
+//			if (exTran.isPresent()) {
+//				sb.append(exnessTransaction + " đã được chi trả.\n");
+//			} else {
+//				totalAmount[0] += amount;
+//				totalAmount[1] += amountToAdmin;
+//				// Chi cho system 20% IB
+//				History historyToAdmin = new History();
+//				User userAdmin = userRepo.findByEmail("admin@gmail.com").get();
+//				historyToAdmin.setAmount(amountToAdmin);
+//				historyToAdmin.setReceiver("admin@gmail.com");
+//				historyToAdmin.setSender(exnessId);
+//				historyToAdmin.setTransaction(exnessTransaction);
+//				historyToAdmin.setTime(String.valueOf(System.currentTimeMillis() / 1000));
+//				historyToAdmin.setMessage("20% từ số IB=" + amount + " của ExnessID=" + exnessId);
+//				historyToAdmin.setUser(userAdmin);
+//				toAdmin.add(historyToAdmin);
+////				hisService.saveHistory(historyToAdmin);
+////
+////				userAdmin.setBalance(userAdmin.getBalance() + amountToAdmin);
+////				userRepo.save(userAdmin);
 //
-//						userLisa.setBalance(userLisa.getBalance() + amountToPay);
-//						userRepo.save(userLisa);
-						totalAmount[2] += amountToPay;
-						remainingAmountPayToNetwork -= amountToPay;
-						break; // Dừng vòng lặp vì đã gửi hết số tiền
-					} else {
-						if (recipientEmail.equals("admin@gmail.com")) {
-							// Không chia cho tài khoản
-							continue;
-						} else {
-							// Ngược lại, gửi 50% của remainingAmountPayToNetwork cho người nhận
-							amountToPay = remainingAmountPayToNetwork / 2;
-							History historyToSystem = new History();
-							User userInSystem = userRepo.findByEmail(recipientEmail).get();
-							historyToSystem.setAmount(amountToPay);
-							historyToSystem.setReceiver(userInSystem.getEmail());
-							historyToSystem.setSender(exnessId);
-							historyToSystem.setTransaction(exnessTransaction);
-							historyToSystem.setTime(String.valueOf(System.currentTimeMillis() / 1000));
-							historyToSystem.setMessage("Hoa hồng từ khoản IB=" + amount + " của ExnessID=" + exnessId);
-							historyToSystem.setUser(userInSystem);
-							toUser.add(historyToSystem);
-//							hisService.saveHistory(historyToSystem);
+//				HashMap<Integer, String> listToPayIB = getNetWorkToLisa(exnessId);
+//				System.out.println(listToPayIB.size());
+//				for (HashMap.Entry<Integer, String> entry : listToPayIB.entrySet()) {
+//					String recipientEmail = entry.getValue();
+//					double amountToPay = 0.0;
 //
-//							userInSystem.setBalance(userInSystem.getBalance() + amountToPay);
-//							userRepo.save(userInSystem);
-							totalAmount[2] += amountToPay;
-							remainingAmountPayToNetwork -= amountToPay; // Giảm số tiền còn lại
-						}
-					}
-				}
-				if (remainingAmountPayToNetwork > 0) {
-					History historyToLisa = new History();
-					User userLisa = userRepo.findByEmail("lisa@gmail.com").get();
-					historyToLisa.setAmount(remainingAmountPayToNetwork);
-					historyToLisa.setReceiver(userLisa.getEmail());
-					historyToLisa.setSender(exnessId);
-					historyToLisa.setTransaction(exnessTransaction);
-					historyToLisa.setTime(String.valueOf(System.currentTimeMillis() / 1000));
-					historyToLisa.setMessage("Số còn lại từ khoản IB=" + amount + " của ExnessID=" + exnessId);
-					historyToLisa.setUser(userLisa);
+//					if (recipientEmail.equals("lisa@gmail.com")) {
+//						// Nếu người nhận là lisa@gmail, gửi toàn bộ số remainingAmountPayToNetwork (số
+//						// IB chia còn lại khi gặp lisa@gmail.com) cho họ
+//						amountToPay = remainingAmountPayToNetwork;
+//						History historyToLisa = new History();
+//						User userLisa = userRepo.findByEmail("lisa@gmail.com").get();
+//						historyToLisa.setAmount(amountToPay);
+//						historyToLisa.setReceiver(userLisa.getEmail());
+//						historyToLisa.setSender(exnessId);
+//						historyToLisa.setTransaction(exnessTransaction);
+//						historyToLisa.setTime(String.valueOf(System.currentTimeMillis() / 1000));
+//						historyToLisa.setMessage("Tìm thấy Lisa, chi hết số IB=" + amount + " còn lại của ExnessID=" + exnessId);
+//						historyToLisa.setUser(userLisa);
+//
+//						toLisa.add(historyToLisa);
+////						hisService.saveHistory(historyToLisa);
+////
+////						userLisa.setBalance(userLisa.getBalance() + amountToPay);
+////						userRepo.save(userLisa);
+//						totalAmount[2] += amountToPay;
+//						remainingAmountPayToNetwork -= amountToPay;
+//						break; // Dừng vòng lặp vì đã gửi hết số tiền
+//					} else {
+//						if (recipientEmail.equals("admin@gmail.com")) {
+//							// Không chia cho tài khoản
+//							continue;
+//						} else {
+//							// Ngược lại, gửi 50% của remainingAmountPayToNetwork cho người nhận
+//							amountToPay = remainingAmountPayToNetwork / 2;
+//							History historyToSystem = new History();
+//							User userInSystem = userRepo.findByEmail(recipientEmail).get();
+//							historyToSystem.setAmount(amountToPay);
+//							historyToSystem.setReceiver(userInSystem.getEmail());
+//							historyToSystem.setSender(exnessId);
+//							historyToSystem.setTransaction(exnessTransaction);
+//							historyToSystem.setTime(String.valueOf(System.currentTimeMillis() / 1000));
+//							historyToSystem.setMessage("Hoa hồng từ khoản IB=" + amount + " của ExnessID=" + exnessId);
+//							historyToSystem.setUser(userInSystem);
+//							toUser.add(historyToSystem);
+////							hisService.saveHistory(historyToSystem);
+////
+////							userInSystem.setBalance(userInSystem.getBalance() + amountToPay);
+////							userRepo.save(userInSystem);
+//							totalAmount[2] += amountToPay;
+//							remainingAmountPayToNetwork -= amountToPay; // Giảm số tiền còn lại
+//						}
+//					}
+//				}
+//				if (remainingAmountPayToNetwork > 0) {
+//					History historyToLisa = new History();
+//					User userLisa = userRepo.findByEmail("lisa@gmail.com").get();
+//					historyToLisa.setAmount(remainingAmountPayToNetwork);
+//					historyToLisa.setReceiver(userLisa.getEmail());
+//					historyToLisa.setSender(exnessId);
+//					historyToLisa.setTransaction(exnessTransaction);
+//					historyToLisa.setTime(String.valueOf(System.currentTimeMillis() / 1000));
+//					historyToLisa.setMessage("Số còn lại từ khoản IB=" + amount + " của ExnessID=" + exnessId);
+//					historyToLisa.setUser(userLisa);
+//
+//					toLisa.add(historyToLisa);
+//				}
+//
+//				listExness.add(exnessTransaction);
+//			}
+//		});
+//
+//		tele.sendMessageToChat(Long.parseLong("-1001804531952"),
+//				"Tổng số tiền IB là: " + totalAmount[0] + "\nTổng số tiền chi về Admin là: " + totalAmount[1]
+//						+ "\nTổng số tiền chi cho hệ thống là: " + totalAmount[2]);
+//		if (!sb.isEmpty()) {
+//			tele.sendMessageToChat(Long.parseLong("-1001804531952"), sb.toString());
+//		}
+//
+//		Thread thread1 = new Thread() {
+//			public void run() {
+//				for (String item : listExness) {
+//					ExnessTransaction exnessTransactionFromExcel = new ExnessTransaction();
+//					exnessTransactionFromExcel.setTime(String.valueOf(System.currentTimeMillis()));
+//					exnessTransactionFromExcel.setTransactionExness(item);
+//					exTranRepo.save(exnessTransactionFromExcel);
+//				}
+//			}
+//		};
+//
+//		Thread thread2 = new Thread() {
+//			public void run() {
+//				for (History item : toAdmin) {
+//					hisService.saveHistory(item);
+//					User user = userRepo.findByEmail(item.getReceiver()).get();
+//					user.setBalance(user.getBalance() + item.getAmount());
+//					userRepo.save(user);
+//				}
+//			}
+//		};
+//
+//		Thread thread3 = new Thread() {
+//			public void run() {
+//				for (History item : toLisa) {
+//					hisService.saveHistory(item);
+//					User user = userRepo.findByEmail(item.getReceiver()).get();
+//					user.setBalance(user.getBalance() + item.getAmount());
+//					userRepo.save(user);
+//				}
+//			}
+//		};
+//
+//		Thread thread4 = new Thread() {
+//			public void run() {
+//				for (History item : toUser) {
+//					hisService.saveHistory(item);
+//					User user = userRepo.findByEmail(item.getReceiver()).get();
+//					user.setBalance(user.getBalance() + item.getAmount());
+//					userRepo.save(user);
+//				}
+//			}
+//		};
+//
+//		thread1.start();
+//		thread2.start();
+//		thread3.start();
+//		thread4.start();
+		
+		System.out.println(data);
 
-					toLisa.add(historyToLisa);
-				}
-
-				listExness.add(exnessTransaction);
-			}
-		});
-
-		tele.sendMessageToChat(Long.parseLong("-1001804531952"),
-				"Tổng số tiền IB là: " + totalAmount[0] + "\nTổng số tiền chi về Admin là: " + totalAmount[1]
-						+ "\nTổng số tiền chi cho hệ thống là: " + totalAmount[2]);
-		if (!sb.isEmpty()) {
-			tele.sendMessageToChat(Long.parseLong("-1001804531952"), sb.toString());
-		}
-
-		Thread thread1 = new Thread() {
-			public void run() {
-				for (String item : listExness) {
-					ExnessTransaction exnessTransactionFromExcel = new ExnessTransaction();
-					exnessTransactionFromExcel.setTime(String.valueOf(System.currentTimeMillis()));
-					exnessTransactionFromExcel.setTransactionExness(item);
-					exTranRepo.save(exnessTransactionFromExcel);
-				}
-			}
-		};
-
-		Thread thread2 = new Thread() {
-			public void run() {
-				for (History item : toAdmin) {
-					hisService.saveHistory(item);
-					User user = userRepo.findByEmail(item.getReceiver()).get();
-					user.setBalance(user.getBalance() + item.getAmount());
-					userRepo.save(user);
-				}
-			}
-		};
-
-		Thread thread3 = new Thread() {
-			public void run() {
-				for (History item : toLisa) {
-					hisService.saveHistory(item);
-					User user = userRepo.findByEmail(item.getReceiver()).get();
-					user.setBalance(user.getBalance() + item.getAmount());
-					userRepo.save(user);
-				}
-			}
-		};
-
-		Thread thread4 = new Thread() {
-			public void run() {
-				for (History item : toUser) {
-					hisService.saveHistory(item);
-					User user = userRepo.findByEmail(item.getReceiver()).get();
-					user.setBalance(user.getBalance() + item.getAmount());
-					userRepo.save(user);
-				}
-			}
-		};
-
-		thread1.start();
-		thread2.start();
-		thread3.start();
-		thread4.start();
-
-		return "OK";
+		return ResponseEntity.ok(data);
 	}
 
 	@GetMapping("/get-message/{email}")
